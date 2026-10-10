@@ -1,0 +1,99 @@
+name: Build and validate MPCMV
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate project root
+        run: |
+          if [ ! -f Makefile ]; then
+            for z in ./*.zip; do [ -f "$z" ] && { echo "Unpacking $z"; unzip -q -o "$z"; }; done
+            m=$(find . -name Makefile -not -path './.git/*' | head -n 1)
+            if [ -n "$m" ]; then d=$(dirname "$m"); echo "Project found in $d; copying it to the repo root"; cp -a "$d"/. .; fi
+          fi
+          if [ ! -f Makefile ]; then echo "ERROR: Makefile not found. Repo contents:"; find . -maxdepth 2 -not -path './.git*' | sort | head -60; exit 1; fi
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y g++ python3 python3-pip zip binutils
+      - name: Install skin-test dependency
+        run: python3 -m pip install --break-system-packages pillow
+      - name: Run host playback smoke test
+        run: make host-smoke
+      - name: Test parameters and state persistence
+        run: make test-params test-state
+      - name: Test synth mode and MIDI timing
+        run: make test-synth-mode test-midi-timing
+      - name: Test MVFF decoder and patch staging
+        run: make test-decode test-patch-stage host-smoke-mvff
+      - name: Test skin and installer
+        run: make test-skin test-install
+      - name: Validate bundled WAV samples
+        run: make validate
+      - name: Verify host binary
+        run: |
+          file build/mpcmv_host_test.so
+          nm -D --defined-only build/mpcmv_host_test.so | grep -E 'VSTPluginMain|main_plugin'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mpcmv-host-test-${{ github.sha }}
+          path: |
+            build/mpcmv_host_test.so
+            build/vst_host_smoke
+            build/param_test
+            build/state_test
+            build/synth_mode_test
+            build/midi_timing_test
+          if-no-files-found: ignore
+          retention-days: 14
+
+  armv7-build:
+    name: MPC X ARMv7 hard-float build (test artifact)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate project root
+        run: |
+          if [ ! -f Makefile ]; then
+            for z in ./*.zip; do [ -f "$z" ] && { echo "Unpacking $z"; unzip -q -o "$z"; }; done
+            m=$(find . -name Makefile -not -path './.git/*' | head -n 1)
+            if [ -n "$m" ]; then d=$(dirname "$m"); echo "Project found in $d; copying it to the repo root"; cp -a "$d"/. .; fi
+          fi
+          if [ ! -f Makefile ]; then echo "ERROR: Makefile not found. Repo contents:"; find . -maxdepth 2 -not -path './.git*' | sort | head -60; exit 1; fi
+      - name: Install ARM cross compiler
+        run: sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf python3 zip
+      - name: Validate bundled WAV samples
+        run: make validate
+      - name: Build ARMv7 hard-float plugin
+        run: make arm ARM_CXX=arm-linux-gnueabihf-g++
+      - name: Verify ARM ELF architecture and VST2 entry points
+        run: |
+          file payload/vst/mpcmv.so
+          arm-linux-gnueabihf-readelf -h payload/vst/mpcmv.so | grep -E 'Class:|Machine:|Flags:'
+          arm-linux-gnueabihf-nm -D --defined-only payload/vst/mpcmv.so | grep -E 'VSTPluginMain|main_plugin'
+      - name: Report runtime library requirements
+        run: |
+          echo "Dynamic dependencies:"; arm-linux-gnueabihf-readelf -d payload/vst/mpcmv.so | grep NEEDED
+          echo "Highest glibc symbol version required:"
+          arm-linux-gnueabihf-objdump -T payload/vst/mpcmv.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+          if arm-linux-gnueabihf-readelf -d payload/vst/mpcmv.so | grep -q 'libstdc++'; then echo "libstdc++ is dynamically linked (unexpected)"; exit 1; fi
+      - name: Assemble installable test package
+        run: sh tools/make_release.sh payload/vst/mpcmv.so build/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mpcmv-armv7-hakai-test-build
+          path: |
+            payload/vst/mpcmv.so
+            build/release/MPCMV-0.3.2.zip
+          if-no-files-found: error
+          retention-days: 30
