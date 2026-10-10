@@ -1,0 +1,21 @@
+ROLAND MV DRUM/SYNTH PATCH SETUP FOR MPC X
+
+This revision adds patch-bank scanning and selectable Drum/Synth playback, but it does not bundle Roland factory audio.
+
+1. Extract the user-supplied MV-8000_Factory_Patches.zip on a computer.
+2. Copy the extracted PATCHES folder to:
+   /sdcard/Synths/mvlib - VST - MV-8000/Samples/Patches/
+   The resulting layout should look like:
+   Samples/Patches/DRUMKITS/DRM_....MV0
+   Samples/Patches/SYNTH/SYN_....MV0
+   Samples/Patches/KEY/....MV0
+   (keep the category subfolders and .MV0 files intact)
+3. Restart/reload the plugin so it scans the patch folders.
+4. Choose an MV patch from the plugin's VST program list.
+5. Set Mode to Drums for MIDI notes 36-51, or Synth for chromatic playback.
+
+Drum mode triggers the first 16 sample records as pads. Synth mode selects the closest decoded root key and pitch-shifts from that root. It also uses conservative MP/FF sample-name hints for velocity-layer selection when the tags appear immediately before root-note digits. This is not equivalent to decoding Roland partial-zone tables. This is a practical sampler approximation, not a full recreation of the MV's partial zones, velocity layers, loops, or patch DSP. The current MVFF reader assumes 44.1 kHz and remains experimental.
+
+The archive contained 103 patch files; the cataloger parsed 96 and flagged 7 with archive/header read failures. Not every file is guaranteed to load.
+
+This ZIP is source code and tests. It does not contain a verified ARMv7 MPC X binary. Build the ARM hard-float VST2 with arm-linux-gnueabihf-g++ or the repository's GitHub Actions workflow, then test on the device before installing.

@@ -1,0 +1,4 @@
+build/*
+!build/.gitkeep
+payload/vst/roland_mv.so
+*.o
